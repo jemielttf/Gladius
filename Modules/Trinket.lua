@@ -44,6 +44,7 @@ local Trinket = Gladius:NewModule("Trinket", false, true, {
 })
 
 function Trinket:OnEnable()
+	self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 	self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 	self:RegisterEvent("ARENA_OPPONENT_UPDATE")
 	self:RegisterEvent("ARENA_COOLDOWNS_UPDATE")
@@ -124,7 +125,7 @@ function Trinket:ARENA_COOLDOWNS_UPDATE(event, unit)
 	if not Gladius:IsValidUnit(unit) then
 		return
 	end
-	self:UpdateTrinket(unit)
+	self:UpdateTrinket(event, unit)
 end
 
 function Trinket:ARENA_CROWD_CONTROL_SPELL_UPDATE(event, unit, spellID)
@@ -148,56 +149,92 @@ function Trinket:ARENA_OPPONENT_UPDATE(event, unit, type)
 	if not Gladius:IsValidUnit(unit) then
 		return
 	end
-	self:UpdateTrinket(unit)
+	self:UpdateTrinket(event, unit)
 end
 
-function Trinket:UNIT_SPELLCAST_SUCCEEDED(event, unit, spell, rank)
+function Trinket:UNIT_SPELLCAST_SUCCEEDED(event, unit, spellLineID, spellID)
 	local _, instanceType = IsInInstance()
 	if instanceType ~= "arena" or not strfind(unit, "arena") or strfind(unit, "pet") then
 		return
 	end
-	-- PVP trinkets
-	if spell == GetSpellInfo(59752) or spell == GetSpellInfo(42292) then
-		self:UpdateTrinket(unit, 120)
+
+	local duration
+
+	-- PVP trinkets7744
+	if spellID == 42292 then
+		duration = 120
 	end
 	-- Honorable Medallion
-	if spell == GetSpellInfo(195710) then
-		self:UpdateTrinket(unit, 180)
+	if spellID == 195710 then
+		duration = 180
 	end
 	-- Gladiator's Medallion
-	if spell == GetSpellInfo(208683) then
-		self:UpdateTrinket(unit, 120)
+	if spellID == 208683 or spellID == 336126 then
+		local id = string.match(unit, "arena(%d)")
+		local specID = GetArenaOpponentSpec and GetArenaOpponentSpec(id)
+		local role
+
+		if specID and specID > 0 then
+			role = GetSpecializationRoleByID(specID)
+		end
+
+		if role == "HEALER" then
+			duration = 90
+		else
+			duration = 120
+		end
 	end
-	-- Every Man For Himself
-	if spell == GetSpellInfo(59752) then
-		self:UpdateTrinket(unit, 30)
+	-- Will to Survive
+	if spellID == 59752 then
+		duration = 90
 	end
 	-- Escape Artist
-	if spell == GetSpellInfo(20589) then
-		self:UpdateTrinket(unit, 30)
+	if spellID == 20589 then
+		duration = 0
 	end
 	-- Stoneform
-	if spell == GetSpellInfo(20594) then
-		self:UpdateTrinket(unit, 30)
+	if spellID == 20594 then
+		duration = 30
+	end
+	--Fireblood
+	if spellID == 265221 then
+		duration = 30
 	end
 	-- Will of the Forsaken
-	if spell == GetSpellInfo(7744) then
-		self:UpdateTrinket(unit, 30)
+	if spellID == 7744 then
+		duration = 30
+	end
+
+	if duration then
+		local startTime = GetTime()
+		self:UpdateTrinket(event, unit, duration, spellID, duration * 1000, startTime * 1000)
+		-- self:UpdateTrinket(event, unit)
 	end
 end
 
-function Trinket:UpdateTrinket(unit, testduration)
+function Trinket:UpdateTrinket(event, unit, testduration, _spellID, _duration, _start)
 	if not self.frame[unit] then
 		return
 	end
 	C_PvP.RequestCrowdControlSpell(unit)
-	local spellID, startTime, duration = C_PvP.GetArenaCrowdControlInfo(unit)
+	local spellID, startTime, duration
+
+	spellID = _spellID
+	startTime = _start
+	duration = _duration
+
+	if not spellID and not startTime and not duration then
+		spellID, startTime, duration = C_PvP.GetArenaCrowdControlInfo(unit)
+	end
+
+	-- Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["[%s %s]: spellID : %s, startTime : %s, duration : %s"], UnitName(unit), event, spellID, startTime, duration), 2, unit)
+
 	-- grid style icon
 	if Gladius.db.trinketGridStyleIcon then
 		self.frame[unit].texture:SetVertexColor(Gladius.db.trinketGridStyleIconUsedColor.r, Gladius.db.trinketGridStyleIconUsedColor.g, Gladius.db.trinketGridStyleIconUsedColor.b, Gladius.db.trinketGridStyleIconUsedColor.a)
 	end
 	-- announcement
-	if Gladius.db.announcements.trinket and duration then
+	if Gladius.db.announcements.trinket and duration and event == "UNIT_SPELLCAST_SUCCEEDED" then
 		Gladius:Call(Gladius.modules.Announcements, "Send", strformat(L["TRINKET USED: %s (%s)"], UnitName(unit) or "test", UnitClass(unit) or "test"), 2, unit)
 	end
 	if (Gladius.db.announcements.trinket or Gladius.db.trinketGridStyleIcon) and duration then
@@ -478,9 +515,9 @@ end
 
 function Trinket:Test(unit)
 	if unit == "arena1" then
-		self:UpdateTrinket(unit, 180)
+		self:UpdateTrinket(nil, unit, 180)
 	elseif unit == "arena2" then
-		self:UpdateTrinket(unit, 120)
+		self:UpdateTrinket(nil, unit, 120)
 	end
 end
 
